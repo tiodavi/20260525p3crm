@@ -26,7 +26,7 @@ class Customer(db.Model):
     phone = db.Column(db.String(50), nullable=True)
     company = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(50), default="新客戶")  # 新客戶, 洽談中, 已簽約, 已流失
-    photo_base64 = db.Column(db.Text, nullable=True)     # 儲存照片的 Base64 字串
+    photo_base64 = db.Column(db.Text, nullable=True)     # 照片設為允許空值 (Nullable)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # 確保資料表存在
@@ -70,7 +70,7 @@ FRONTEND_REGISTER_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}"
             <h2 class="text-center text-3xl font-extrabold text-slate-900">貴賓會員註冊</h2>
             <p class="mt-2 text-center text-sm text-slate-600">請填寫以下資訊，加入我們的商務生態圈</p>
         </div>
-        <form class="mt-8 space-y-6" action="{{ url_for('register') }}" method="POST">
+        <form id="registerForm" class="mt-8 space-y-6" action="{{ url_for('register') }}" method="POST">
             <div class="space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-slate-700">姓名 <span class="text-red-500">*</span></label>
@@ -89,8 +89,8 @@ FRONTEND_REGISTER_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}"
                     <input type="text" name="company" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-slate-700">個人照片 <span class="text-red-500">*</span></label>
-                    <input type="file" id="photo_file" accept="image/*" required class="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                    <label class="block text-sm font-medium text-slate-700">個人照片 <span class="text-xs text-slate-400">(選填)</span></label>
+                    <input type="file" id="photo_file" accept="image/*" class="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
                     <input type="hidden" name="photo_base64" id="photo_base64">
                     <div id="preview_container" class="mt-3 hidden">
                         <img id="photo_preview" class="w-24 h-24 object-cover rounded-full border-2 border-indigo-500">
@@ -104,6 +104,7 @@ FRONTEND_REGISTER_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}"
     </div>
 </div>
 <script>
+// 當有選擇檔案時才進行 Base64 轉換與預覽
 document.getElementById('photo_file').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (file) {
@@ -114,6 +115,22 @@ document.getElementById('photo_file').addEventListener('change', function(e) {
             document.getElementById('preview_container').classList.remove('hidden');
         };
         reader.readAsDataURL(file);
+    } else {
+        // 如果使用者清空選擇，則清空隱藏欄位與預覽
+        document.getElementById('photo_base64').value = "";
+        document.getElementById('preview_container').classList.add('hidden');
+    }
+});
+
+// 表單送出檢查：僅防止轉碼尚未完成的短暫衝突
+document.getElementById('registerForm').addEventListener('submit', function(e) {
+    const base64Value = document.getElementById('photo_base64').value;
+    const fileInput = document.getElementById('photo_file');
+    
+    // 如果有選檔案，但非同步轉碼還沒好，才攔截阻擋
+    if (fileInput.files.length > 0 && !base64Value) {
+        e.preventDefault();
+        alert('照片正在處理中，請稍候再試一次。');
     }
 });
 </script>
@@ -207,7 +224,9 @@ DASHBOARD_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}", """
                                         {% if customer.photo_base64 %}
                                         <img class="h-10 w-10 rounded-full object-cover border" src="{{ customer.photo_base64 }}" alt="">
                                         {% else %}
-                                        <div class="h-10 w-10 rounded-full bg-slate-300 flex items-center justify-center text-slate-600"><i class="fa-solid fa-user"></i></div>
+                                        <div class="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 border border-slate-300">
+                                            <i class="fa-solid fa-user text-sm"></i>
+                                        </div>
                                         {% endif %}
                                     </div>
                                     <div class="ml-4">
@@ -270,8 +289,9 @@ def register():
             flash("該 Email 已經註冊過！", "error")
             return render_template_string(FRONTEND_REGISTER_HTML)
 
+        # 即使 photo_base64 是空的字串或是 None，也可以直接安全寫入
         new_customer = Customer(
-            name=name, email=email, phone=phone, company=company, photo_base64=photo_base64
+            name=name, email=email, phone=phone, company=company, photo_base64=photo_base64 if photo_base64 else None
         )
         db.session.add(new_customer)
         db.session.commit()
@@ -288,7 +308,7 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        # 預設帳密驗證：admin / admin
+        # 預設管理員帳密：admin / admin
         if username == "admin" and password == "admin":
             session["admin_logged_in"] = True
             flash("成功登入管理系統", "success")
@@ -336,7 +356,7 @@ def update_customer(id):
     if not session.get("admin_logged_in"):
         return redirect(url_for("login"))
 
-    customer = Customer.query.get_or_40004(id) if hasattr(Customer.query, 'get_or_404') else db.session.get(Customer, id)
+    customer = db.session.get(Customer, id)
     if customer:
         customer.status = request.form.get("status")
         db.session.commit()
