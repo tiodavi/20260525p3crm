@@ -26,7 +26,7 @@ class Customer(db.Model):
     phone = db.Column(db.String(50), nullable=True)
     company = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(50), default="新客戶")  # 新客戶, 洽談中, 已簽約, 已流失
-    photo_base64 = db.Column(db.Text, nullable=True)     # 照片設為允許空值 (Nullable)
+    photo_base64 = db.Column(db.Text, nullable=True)     # 照片可有可無
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # 確保資料表存在
@@ -104,7 +104,6 @@ FRONTEND_REGISTER_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}"
     </div>
 </div>
 <script>
-// 當有選擇檔案時才進行 Base64 轉換與預覽
 document.getElementById('photo_file').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (file) {
@@ -115,22 +114,6 @@ document.getElementById('photo_file').addEventListener('change', function(e) {
             document.getElementById('preview_container').classList.remove('hidden');
         };
         reader.readAsDataURL(file);
-    } else {
-        // 如果使用者清空選擇，則清空隱藏欄位與預覽
-        document.getElementById('photo_base64').value = "";
-        document.getElementById('preview_container').classList.add('hidden');
-    }
-});
-
-// 表單送出檢查：僅防止轉碼尚未完成的短暫衝突
-document.getElementById('registerForm').addEventListener('submit', function(e) {
-    const base64Value = document.getElementById('photo_base64').value;
-    const fileInput = document.getElementById('photo_file');
-    
-    // 如果有選檔案，但非同步轉碼還沒好，才攔截阻擋
-    if (fileInput.files.length > 0 && !base64Value) {
-        e.preventDefault();
-        alert('照片正在處理中，請稍候再試一次。');
     }
 });
 </script>
@@ -191,15 +174,15 @@ DASHBOARD_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}", """
                     <p class="text-3xl font-bold text-slate-900 mt-1">{{ total_count }}</p>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <p class="text-sm text-slate-500 font-medium uppercase">新客戶潛在商機</p>
+                    <p class="text-sm text-slate-500 font-medium uppercase">新客戶</p>
                     <p class="text-3xl font-bold text-blue-600 mt-1">{{ status_counts['新客戶'] }}</p>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <p class="text-sm text-slate-500 font-medium uppercase">簽約成功</p>
+                    <p class="text-sm text-slate-500 font-medium uppercase">已簽約</p>
                     <p class="text-3xl font-bold text-emerald-600 mt-1">{{ status_counts['已簽約'] }}</p>
                 </div>
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <p class="text-sm text-slate-500 font-medium uppercase">洽談轉換中</p>
+                    <p class="text-sm text-slate-500 font-medium uppercase">洽談中</p>
                     <p class="text-3xl font-bold text-amber-600 mt-1">{{ status_counts['洽談中'] }}</p>
                 </div>
             </div>
@@ -224,9 +207,7 @@ DASHBOARD_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}", """
                                         {% if customer.photo_base64 %}
                                         <img class="h-10 w-10 rounded-full object-cover border" src="{{ customer.photo_base64 }}" alt="">
                                         {% else %}
-                                        <div class="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 border border-slate-300">
-                                            <i class="fa-solid fa-user text-sm"></i>
-                                        </div>
+                                        <div class="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 border"><i class="fa-solid fa-user"></i></div>
                                         {% endif %}
                                     </div>
                                     <div class="ml-4">
@@ -243,7 +224,7 @@ DASHBOARD_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}", """
                                 {{ customer.company or '—' }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <form action="{{ url_for('update_customer', id=customer.id) }}" method="POST" class="inline-block">
+                                <form action="{{ url_for('update_status', id=customer.id) }}" method="POST" class="inline-block">
                                     <select name="status" onchange="this.form.submit()" class="text-xs font-semibold rounded-full px-3 py-1 border {% if customer.status == '已簽約' %}bg-emerald-50 border-emerald-300 text-emerald-700{% elif customer.status == '洽談中' %}bg-amber-50 border-amber-300 text-amber-700{% elif customer.status == '已流失' %}bg-red-50 border-red-300 text-red-700{% else %}bg-blue-50 border-blue-300 text-blue-700{% endif %} focus:outline-none">
                                         <option value="新客戶" {% if customer.status == '新客戶' %}selected{% endif %}>新客戶</option>
                                         <option value="洽談中" {% if customer.status == '洽談中' %}selected{% endif %}>洽談中</option>
@@ -252,7 +233,8 @@ DASHBOARD_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}", """
                                     </select>
                                 </form>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                                <button onclick="openEditModal({{ customer.id }}, '{{ customer.name }}', '{{ customer.email }}', '{{ customer.phone or '' }}', '{{ customer.company or '' }}', '{{ customer.status }}', '{{ customer.photo_base64 or '' }}')" class="text-indigo-600 hover:text-indigo-900 cursor-pointer"><i class="fa-solid fa-pen-to-square"></i> 編輯</button>
                                 <a href="{{ url_for('delete_customer', id=customer.id) }}" onclick="return confirm('確定要刪除此客戶紀錄嗎？')" class="text-red-600 hover:text-red-900 transition"><i class="fa-solid fa-trash"></i> 刪除</a>
                             </td>
                         </tr>
@@ -267,6 +249,96 @@ DASHBOARD_HTML = BASE_LAYOUT.replace("{% block content %}{% endblock %}", """
         </main>
     </div>
 </div>
+
+<div id="editModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 overflow-hidden relative">
+        <div class="flex justify-between items-center border-b pb-4 mb-6">
+            <h3 class="text-xl font-bold text-slate-900">修改客戶基本資料</h3>
+            <button onclick="closeEditModal()" class="text-slate-400 hover:text-slate-600 text-xl cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="editForm" action="" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700">姓名 <span class="text-red-500">*</span></label>
+                <input type="text" id="modal_name" name="name" required class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">電子郵件 <span class="text-red-500">*</span></label>
+                <input type="email" id="modal_email" name="email" required class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">聯絡電話</label>
+                <input type="text" id="modal_phone" name="phone" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">公司名稱</label>
+                <input type="text" id="modal_company" name="company" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">客戶狀態</label>
+                <select id="modal_status" name="status" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg shadow-sm bg-white focus:outline-none">
+                    <option value="新客戶">新客戶</option>
+                    <option value="洽談中">洽談中</option>
+                    <option value="已簽約">已簽約</option>
+                    <option value="已流失">已流失</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700">更換大頭貼 <span class="text-xs text-slate-400">(不選則維持原圖)</span></label>
+                <input type="file" id="modal_photo_file" accept="image/*" class="mt-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                <input type="hidden" id="modal_photo_base64" name="photo_base64">
+                <div class="mt-3 flex items-center space-x-4">
+                    <img id="modal_photo_preview" class="w-16 h-16 object-cover rounded-full border bg-slate-100">
+                    <span class="text-xs text-slate-400">目前預覽</span>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 pt-4 border-t mt-6">
+                <button type="button" onclick="closeEditModal()" class="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 bg-white hover:bg-slate-50 cursor-pointer">取消</button>
+                <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm cursor-pointer">儲存變更</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// 開啟編輯彈窗並填入舊資料
+function openEditModal(id, name, email, phone, company, status, photoBase64) {
+    document.getElementById('editForm').action = "/admin/customer/" + id + "/edit";
+    document.getElementById('modal_name').value = name;
+    document.getElementById('modal_email').value = email;
+    document.getElementById('modal_phone').value = phone;
+    document.getElementById('modal_company').value = company;
+    document.getElementById('modal_status').value = status;
+    document.getElementById('modal_photo_base64').value = photoBase64; // 保留原圖 Base64
+    
+    const previewImg = document.getElementById('modal_photo_preview');
+    if(photoBase64) {
+        previewImg.src = photoBase64;
+    } else {
+        previewImg.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/><circle cx='12' cy='7' r='4'/></svg>";
+    }
+    
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+// 關閉編輯彈窗
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+    document.getElementById('modal_photo_file').value = ''; // 清空檔案選擇器
+}
+
+// 監聽彈窗內的照片選擇器轉 Base64
+document.getElementById('modal_photo_file').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            document.getElementById('modal_photo_base64').value = event.target.result;
+            document.getElementById('modal_photo_preview').src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+});
+</script>
 """)
 
 # -------------------------------------------------------------------------
@@ -283,20 +355,18 @@ def register():
         company = request.form.get("company")
         photo_base64 = request.form.get("photo_base64")
 
-        # 檢查 Email 是否重複
         existing = Customer.query.filter_by(email=email).first()
         if existing:
             flash("該 Email 已經註冊過！", "error")
             return render_template_string(FRONTEND_REGISTER_HTML)
 
-        # 即使 photo_base64 是空的字串或是 None，也可以直接安全寫入
         new_customer = Customer(
             name=name, email=email, phone=phone, company=company, photo_base64=photo_base64 if photo_base64 else None
         )
         db.session.add(new_customer)
         db.session.commit()
-        flash("註冊成功！感謝您的加入。", "success")
-        return redirect(url_for("register"))
+        flash("註冊成功！請登入管理系統。", "success")
+        return redirect(url_for("login"))
 
     return render_template_string(FRONTEND_REGISTER_HTML)
 
@@ -308,7 +378,6 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        # 預設管理員帳密：admin / admin
         if username == "admin" and password == "admin":
             session["admin_logged_in"] = True
             flash("成功登入管理系統", "success")
@@ -336,7 +405,6 @@ def dashboard():
     customers = Customer.query.order_by(Customer.created_at.desc()).all()
     total_count = len(customers)
 
-    # 統計各個狀態的數量
     status_counts = {"新客戶": 0, "洽談中": 0, "已簽約": 0, "已流失": 0}
     for c in customers:
         if c.status in status_counts:
@@ -350,9 +418,9 @@ def dashboard():
     )
 
 
-# 後台更新狀態變更
-@app.route("/admin/customer/<int:id>/update", methods=["POST"])
-def update_customer(id):
+# 路由 A：單純下拉選單快速變更「狀態」
+@app.route("/admin/customer/<int:id>/status", methods=["POST"])
+def update_status(id):
     if not session.get("admin_logged_in"):
         return redirect(url_for("login"))
 
@@ -364,7 +432,40 @@ def update_customer(id):
     return redirect(url_for("dashboard"))
 
 
-# 後台刪除資料
+# 路由 B【全新完整功能】：後台彈出視窗提交「修改所有欄位」
+@app.route("/admin/customer/<int:id>/edit", methods=["POST"])
+def edit_customer(id):
+    if not session.get("admin_logged_in"):
+        return redirect(url_for("login"))
+
+    customer = db.session.get(Customer, id)
+    if customer:
+        email = request.form.get("email")
+        
+        # 檢查是否有跟別人的 Email 衝突
+        existing = Customer.query.filter(Customer.email == email, Customer.id != id).first()
+        if existing:
+            flash(f"更新失敗！Email '{email}' 已被其他客戶使用。", "error")
+            return redirect(url_for("dashboard"))
+            
+        customer.name = request.form.get("name")
+        customer.email = email
+        customer.phone = request.form.get("phone")
+        customer.company = request.form.get("company")
+        customer.status = request.form.get("status")
+        
+        # 處理照片：如果有新轉換的 Base64 則覆蓋，沒有則不更動
+        photo_base64 = request.form.get("photo_base64")
+        if photo_base64:
+            customer.photo_base64 = photo_base64
+
+        db.session.commit()
+        flash(f"已成功更新 {customer.name} 的資料！", "success")
+        
+    return redirect(url_for("dashboard"))
+
+
+# 後台：刪除資料
 @app.route("/admin/customer/<int:id>/delete")
 def delete_customer(id):
     if not session.get("admin_logged_in"):
@@ -380,4 +481,3 @@ def delete_customer(id):
 
 if __name__ == "__main__":
     app.run(debug=True)
-    ##
